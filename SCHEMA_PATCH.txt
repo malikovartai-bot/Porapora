@@ -1,0 +1,10 @@
+/*
+Добавь в model FinanceReport поле:
+
+  // SHA-256 хеш содержимого файла, чтобы не импортировать один и тот же отчёт повторно
+  contentHash String? @unique
+
+и выполни:
+  npx prisma migrate dev -n add_finance_report_content_hash
+  npx prisma generate
+*/
