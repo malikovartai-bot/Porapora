@@ -46,10 +46,12 @@ model User {
   role         UserRole
 
   personId     String?  @unique
-  person       Person?  @relation(fields: [personId], references: [id])
+  person       Person?  @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   attachments  Attachment[]
   createdAt    DateTime @default(now())
+
+  @@index([personId])
 }
 
 model Play {
@@ -87,7 +89,6 @@ model Person {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   externalBookings ExternalBooking[]
-
 }
 
 model Event {
@@ -98,8 +99,8 @@ model Event {
   endAt       DateTime?
   playId      String?
   venueId     String?
-  play        Play?        @relation(fields: [playId], references: [id])
-  venue       Venue?       @relation(fields: [venueId], references: [id])
+  play        Play?        @relation(fields: [playId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  venue       Venue?       @relation(fields: [venueId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   status      EventStatus
   notes       String?
   assignments Assignment[]
@@ -108,6 +109,9 @@ model Event {
   expenses    EventExpense[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  @@index([playId])
+  @@index([venueId])
 }
 
 model Assignment {
@@ -117,10 +121,10 @@ model Assignment {
 
   /// роль спектакля (сущность), чтобы назначать людей на конкретные роли
   roleId    String?
-  role      PlayRole? @relation(fields: [roleId], references: [id])
+  role      PlayRole? @relation(fields: [roleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  person    Person   @relation(fields: [personId], references: [id])
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   /// временно оставляем (можно потом убрать/заменить)
   jobTitle  String?
@@ -129,6 +133,9 @@ model Assignment {
   createdAt DateTime @default(now())
 
   @@unique([eventId, roleId])
+  @@index([eventId])
+  @@index([personId])
+  @@index([roleId])
 }
 
 model Attachment {
@@ -142,10 +149,14 @@ model Attachment {
   playId           String?
   eventId          String?
   uploadedByUserId String
-  uploadedBy       User                 @relation(fields: [uploadedByUserId], references: [id])
-  play             Play?                @relation(fields: [playId], references: [id])
-  event            Event?               @relation(fields: [eventId], references: [id])
+  uploadedBy       User                 @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  play             Play?                @relation(fields: [playId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  event            Event?               @relation(fields: [eventId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAt        DateTime             @default(now())
+
+  @@index([uploadedByUserId])
+  @@index([playId])
+  @@index([eventId])
 }
 
 /// Роль в конкретном спектакле (Марат, Лика, Леонидик и т.д.)
@@ -177,7 +188,6 @@ model ExternalBooking {
 
   @@index([personId, startAt])
 }
-
 // === FINANCE REPORTS (Intickets import + manual expenses) ===
 
 enum FinanceProvider {
@@ -281,4 +291,3 @@ enum EventExpenseCategory {
   FOOD
   OTHER
 }
-

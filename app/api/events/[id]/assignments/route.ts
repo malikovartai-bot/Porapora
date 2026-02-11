@@ -1,14 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireApiAuth } from '@/lib/access';
+import { assignmentSchema } from '@/lib/schemas';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireApiAuth(['OWNER', 'MANAGER']);
   if ('error' in auth) return auth.error;
 
-  const body = await req.json();
+  const parsed = assignmentSchema.safeParse(await req.json());
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const body = parsed.data;
+
   const event = await prisma.event.findUnique({ where: { id: params.id } });
   if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+  const person = await prisma.person.findUnique({ where: { id: body.personId } });
+  if (!person) return NextResponse.json({ error: 'Person not found' }, { status: 404 });
+
+  if (body.roleId) {
+    const role = await prisma.playRole.findUnique({ where: { id: body.roleId } });
+    if (!role) return NextResponse.json({ error: 'Role not found' }, { status: 404 });
+    if (event.playId && role.playId !== event.playId) {
+      return NextResponse.json({ error: 'Role belongs to another play' }, { status: 400 });
+    }
+  }
+
+  const duplicate = await prisma.assignment.findFirst({
+    where: { eventId: params.id, personId: body.personId }
+  });
+  if (duplicate) return NextResponse.json({ error: 'Person is already assigned to this event' }, { status: 409 });
 
   const overlapping = await prisma.assignment.findFirst({
     where: {
@@ -22,16 +42,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     include: { event: true }
   });
 
-  const assignment = await prisma.assignment.create({
-    data: {
-      eventId: params.id,
-      personId: body.personId,
-      jobTitle: body.jobTitle,
-      notes: body.notes,
-      callTime: body.callTime ? new Date(body.callTime) : null
-    },
-    include: { person: true }
-  });
+  try {
+    const assignment = await prisma.assignment.create({
+      data: {
+        eventId: params.id,
+        personId: body.personId,
+        roleId: body.roleId,
+        jobTitle: body.jobTitle,
+        notes: body.notes,
+        callTime: body.callTime ? new Date(body.callTime) : null
+      },
+      include: { person: true, role: true }
+    });
 
-  return NextResponse.json({ assignment, warning: overlapping ? `Конфликт с сеансом: ${overlapping.event.title}` : null });
+    return NextResponse.json({ assignment, warning: overlapping ? `Конфликт с сеансом: ${overlapping.event.title}` : null });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to create assignment', details: String(error) }, { status: 500 });
+  }
 }
