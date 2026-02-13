@@ -31,6 +31,16 @@ function withinMinutes(d: Date, minutes: number) {
   };
 }
 
+function isFingerprintUniqueConflict(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== "P2002") return false;
+
+  const target = error.meta?.target;
+  if (!Array.isArray(target)) return false;
+
+  return target.includes("fingerprint") || target.includes("contentHash");
+}
+
 /**
  * Импорт отчёта Intickets:
  * - вычисляет fingerprint из содержимого отчёта
@@ -60,7 +70,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
 
   const existing = await prisma.financeReport.findUnique({
     where: { fingerprint },
-    select: { id: true, fingerprint: true, importedAt: true, originalFileName: true, fileOriginalName: true },
+    select: { id: true, fingerprint: true, importedAt: true, originalFileName: true },
   });
 
   if (existing) {
@@ -70,7 +80,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
         fingerprint: existing.fingerprint,
         existingReportId: existing.id,
         importedAt: existing.importedAt.toISOString(),
-        originalFileName: existing.originalFileName ?? existing.fileOriginalName,
+        originalFileName: existing.originalFileName ?? "",
       })
     );
   }
@@ -159,11 +169,11 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
         });
       }
     });
-  } catch (e: any) {
-    if (e?.code === "P2002") {
+  } catch (e: unknown) {
+    if (isFingerprintUniqueConflict(e)) {
       const conflict = await prisma.financeReport.findUnique({
         where: { fingerprint },
-        select: { id: true, fingerprint: true, importedAt: true, originalFileName: true, fileOriginalName: true },
+        select: { id: true, fingerprint: true, importedAt: true, originalFileName: true },
       });
       redirect(
         buildRedirectUrl(redirectTo, {
@@ -171,7 +181,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
           fingerprint,
           existingReportId: conflict?.id ?? "",
           importedAt: conflict?.importedAt?.toISOString?.() ?? "",
-          originalFileName: conflict?.originalFileName ?? conflict?.fileOriginalName ?? "",
+          originalFileName: conflict?.originalFileName ?? "",
         })
       );
     }
@@ -179,7 +189,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
     redirect(
       buildRedirectUrl(redirectTo, {
         status: "error",
-        error: "Не удалось импортировать: " + String(e?.message ?? e),
+        error: "Не удалось импортировать: " + String(e instanceof Error ? e.message : e),
       })
     );
   }
