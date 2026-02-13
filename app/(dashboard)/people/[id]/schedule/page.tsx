@@ -205,7 +205,7 @@ export default async function PersonSchedulePage({
             </Link>
           ) : (
             <form action={deleteExternalBooking} className="inline">
-              <input type="hidden" name="personId" value={person.id} />
+              {person && <input type="hidden" name="personId" value={person.id} />}
               <input type="hidden" name="bookingId" value={item.id} />
               <button className="px-3 py-2 rounded border text-sm hover:bg-red-50" type="submit">
                 Удалить

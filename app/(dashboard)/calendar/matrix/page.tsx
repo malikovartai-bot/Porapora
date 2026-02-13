@@ -107,7 +107,7 @@ export default async function CalendarMatrixPage({
   for (const b of external) {
     // mark all days of range
     let cur = startOfDay(b.startAt);
-    const end = endOfDay(b.endAt);
+    const end = endOfDay(b.endAt ?? b.startAt);
     while (cur <= end) {
       const key = isoDate(cur);
       if (cur >= from && cur <= to) mark(b.personId, key, b.title);

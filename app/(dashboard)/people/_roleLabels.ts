@@ -2,8 +2,7 @@ import { PersonRole } from '@prisma/client';
 
 export const PERSON_ROLE_LABELS: Record<PersonRole, string> = {
   ACTOR: 'Актер',
-  DIRECTOR: 'Режиссер',
-  SOUND: 'Звук',
+   SOUND: 'Звук',
   LIGHT: 'Свет',
   STAGE_MACHINIST: 'Машинист',
   PROPS: 'Реквизит',

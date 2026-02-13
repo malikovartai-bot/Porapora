@@ -190,7 +190,9 @@ export default async function EventFinancePage({ params }: { params: { id: strin
                         <td className="p-2">{fmt.format(l.sessionAt)}</td>
                         <td className="p-2 text-right">{l.ticketsCount}</td>
                         <td className="p-2 text-right">{rub(gross)}</td>
-                        <td className="p-2 text-right">{l.servicePercent ?? "—"}</td>
+                        <td className="p-2 text-right">
+  {l.servicePercent == null ? "—" : String(l.servicePercent)}
+</td>
                         <td className="p-2 text-right">{rub(fee)}</td>
                         <td className="p-2 text-right">
                           <b>{rub(net)}</b>
