@@ -69,13 +69,13 @@ async function findExistingByHash(hash: string, hasFingerprint: boolean) {
       where: {
         OR: [{ fingerprint: hash } as never, { contentHash: hash }],
       } as never,
-      select: { id: true, fingerprint: true, importedAt: true, originalFileName: true } as never,
+      select: { id: true, fingerprint: true, createdAt: true, originalFileName: true } as never,
     } as never);
   }
 
   return prisma.financeReport.findFirst({
     where: { contentHash: hash },
-    select: { id: true, importedAt: true, originalFileName: true },
+    select: { id: true, createdAt: true, originalFileName: true },
   });
 }
 
@@ -115,7 +115,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
         status: "duplicate",
         fingerprint,
         existingReportId: existing.id,
-        importedAt: existing.importedAt.toISOString(),
+        importedAt: existing.createdAt.toISOString(),
         originalFileName: existing.originalFileName ?? "",
       })
     );
@@ -218,7 +218,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
           status: "duplicate",
           fingerprint,
           existingReportId: conflict?.id ?? "",
-          importedAt: conflict?.importedAt?.toISOString?.() ?? "",
+          importedAt: conflict?.createdAt?.toISOString?.() ?? "",
           originalFileName: conflict?.originalFileName ?? "",
         })
       );
