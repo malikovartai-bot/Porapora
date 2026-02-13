@@ -41,13 +41,17 @@ function isFingerprintUniqueConflict(error: unknown) {
   return target.includes("fingerprint") || target.includes("contentHash");
 }
 
-function isUnknownFingerprintError(error: unknown) {
+function isUnknownFinanceReportFieldError(error: unknown, field: string) {
   if (!(error instanceof Error)) return false;
   return (
-    error.message.includes("Unknown argument `fingerprint`") ||
-    error.message.includes("Unknown field `fingerprint`") ||
-    error.message.includes('column "fingerprint" does not exist')
+    error.message.includes(`Unknown argument \`${field}\``) ||
+    error.message.includes(`Unknown field \`${field}\``) ||
+    error.message.includes(`column "${field}" does not exist`)
   );
+}
+
+function isUnknownFingerprintError(error: unknown) {
+  return isUnknownFinanceReportFieldError(error, "fingerprint");
 }
 
 async function detectFingerprintSupport() {
@@ -63,19 +67,57 @@ async function detectFingerprintSupport() {
   }
 }
 
-async function findExistingByHash(hash: string, hasFingerprint: boolean) {
+
+type TimestampField = "importedAt" | "createdAt" | null;
+
+async function detectReportTimestampField(): Promise<TimestampField> {
+  try {
+    await prisma.financeReport.findFirst({
+      take: 1,
+      select: { id: true, importedAt: true } as never,
+    } as never);
+    return "importedAt";
+  } catch (error) {
+    if (!isUnknownFinanceReportFieldError(error, "importedAt")) throw error;
+  }
+
+  try {
+    await prisma.financeReport.findFirst({
+      take: 1,
+      select: { id: true, createdAt: true } as never,
+    } as never);
+    return "createdAt";
+  } catch (error) {
+    if (!isUnknownFinanceReportFieldError(error, "createdAt")) throw error;
+  }
+
+  return null;
+}
+
+function getImportedAtIso(value: unknown, timestampField: TimestampField) {
+  if (!timestampField) return "";
+  const ts = (value as Record<string, unknown> | null | undefined)?.[timestampField];
+  return ts instanceof Date ? ts.toISOString() : "";
+}
+async function findExistingByHash(hash: string, hasFingerprint: boolean, timestampField: TimestampField) {
+  const baseSelect = {
+    id: true,
+    originalFileName: true,
+    ...(timestampField ? { [timestampField]: true } : {}),
+  } as never;
+
   if (hasFingerprint) {
     return prisma.financeReport.findFirst({
       where: {
         OR: [{ fingerprint: hash } as never, { contentHash: hash }],
       } as never,
-      select: { id: true, fingerprint: true, createdAt: true, originalFileName: true } as never,
+      select: { ...baseSelect, fingerprint: true } as never,
     } as never);
   }
 
   return prisma.financeReport.findFirst({
     where: { contentHash: hash },
-    select: { id: true, createdAt: true, originalFileName: true },
+    select: baseSelect,
   });
 }
 
@@ -106,8 +148,9 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
 
   const fingerprint = computeReportFingerprint(parsed);
   const hasFingerprint = await detectFingerprintSupport();
+  const timestampField = await detectReportTimestampField();
 
-  const existing = await findExistingByHash(fingerprint, hasFingerprint);
+  const existing = await findExistingByHash(fingerprint, hasFingerprint, timestampField);
 
   if (existing) {
     redirect(
@@ -115,7 +158,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
         status: "duplicate",
         fingerprint,
         existingReportId: existing.id,
-        importedAt: existing.createdAt.toISOString(),
+        importedAt: getImportedAtIso(existing, timestampField),
         originalFileName: existing.originalFileName ?? "",
       })
     );
@@ -212,13 +255,13 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
     });
   } catch (e: unknown) {
     if (isFingerprintUniqueConflict(e)) {
-      const conflict = await findExistingByHash(fingerprint, hasFingerprint);
+      const conflict = await findExistingByHash(fingerprint, hasFingerprint, timestampField);
       redirect(
         buildRedirectUrl(redirectTo, {
           status: "duplicate",
           fingerprint,
           existingReportId: conflict?.id ?? "",
-          importedAt: conflict?.createdAt?.toISOString?.() ?? "",
+          importedAt: getImportedAtIso(conflict, timestampField),
           originalFileName: conflict?.originalFileName ?? "",
         })
       );
