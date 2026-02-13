@@ -109,32 +109,13 @@ export async function deletePlayRole(formData: FormData) {
 }
 
 /**
- * Назначить "базового" человека на роль спектакля (PlayRoleCast)
- * - если personId пустой -> удалить назначение (если было)
- *
- * form fields:
- * - playId (hidden)
- * - playRoleId (hidden)
- * - personId (can be empty string)
+ * В текущей Prisma-схеме отдельной модели "базового состава" нет.
+ * Экшен оставлен как no-op для совместимости маршрутов.
  */
 export async function setPlayRoleCast(formData: FormData) {
   const playId = String(formData.get('playId') ?? '').trim();
-  const playRoleId = String(formData.get('playRoleId') ?? '').trim();
-  const personId = String(formData.get('personId') ?? '').trim();
 
   if (!playId) throw new Error('playId is required');
-  if (!playRoleId) throw new Error('playRoleId is required');
-
-  if (!personId) {
-    // снять назначение
-    await prisma.playRoleCast.deleteMany({ where: { playRoleId } });
-  } else {
-    await prisma.playRoleCast.upsert({
-      where: { playRoleId },
-      update: { personId },
-      create: { playRoleId, personId },
-    });
-  }
 
   revalidatePath(`/plays/${playId}`);
   revalidatePath(`/plays/${playId}/edit`);
