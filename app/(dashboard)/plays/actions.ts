@@ -4,15 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-/**
- * Создать роль спектакля (PlayRole)
- * sortOrder назначается автоматически: max(sortOrder)+1 в рамках спектакля.
- *
- * form fields:
- * - playId (hidden)
- * - title
- * - notes (optional)
- */
 export async function createPlayRole(formData: FormData) {
   const playId = String(formData.get('playId') ?? '').trim();
   const titleRaw = formData.get('title');
@@ -46,15 +37,6 @@ export async function createPlayRole(formData: FormData) {
   redirect(`/plays/${playId}/roles`);
 }
 
-/**
- * Обновить роль спектакля (PlayRole)
- * form fields:
- * - playId (hidden)
- * - roleId (hidden)
- * - title
- * - sortOrder (optional number)
- * - notes (optional)
- */
 export async function updatePlayRole(formData: FormData) {
   const playId = String(formData.get('playId') ?? '').trim();
   const roleId = String(formData.get('roleId') ?? '').trim();
@@ -88,12 +70,6 @@ export async function updatePlayRole(formData: FormData) {
   redirect(`/plays/${playId}/roles`);
 }
 
-/**
- * Удалить роль спектакля (PlayRole)
- * form fields:
- * - playId (hidden)
- * - roleId (hidden)
- */
 export async function deletePlayRole(formData: FormData) {
   const playId = String(formData.get('playId') ?? '').trim();
   const roleId = String(formData.get('roleId') ?? '').trim();
@@ -108,14 +84,40 @@ export async function deletePlayRole(formData: FormData) {
   redirect(`/plays/${playId}/roles`);
 }
 
-/**
- * В текущей Prisma-схеме отдельной модели "базового состава" нет.
- * Экшен оставлен как no-op для совместимости маршрутов.
- */
+export async function setBaseCast(playId: string, roleId: string, personId: string | null) {
+  if (!playId) throw new Error('playId is required');
+  if (!roleId) throw new Error('roleId is required');
+
+  const role = await prisma.playRole.findUnique({
+    where: { id: roleId },
+    select: { id: true, playId: true },
+  });
+
+  if (!role || role.playId !== playId) {
+    throw new Error('role does not belong to play');
+  }
+
+  if (!personId) {
+    await prisma.playRoleCast.deleteMany({ where: { playId, playRoleId: roleId } });
+    return;
+  }
+
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  if (!person) throw new Error('person not found');
+
+  await prisma.playRoleCast.upsert({
+    where: { playRoleId: roleId },
+    update: { playId, personId },
+    create: { playId, playRoleId: roleId, personId },
+  });
+}
+
 export async function setPlayRoleCast(formData: FormData) {
   const playId = String(formData.get('playId') ?? '').trim();
+  const roleId = String(formData.get('roleId') ?? '').trim();
+  const personId = String(formData.get('personId') ?? '').trim() || null;
 
-  if (!playId) throw new Error('playId is required');
+  await setBaseCast(playId, roleId, personId);
 
   revalidatePath(`/plays/${playId}`);
   revalidatePath(`/plays/${playId}/edit`);

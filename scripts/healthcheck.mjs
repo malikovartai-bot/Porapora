@@ -36,22 +36,31 @@ async function runDbChecks() {
 
   try {
     const assignments = await prisma.assignment.findMany({
-      where: { roleId: { not: null } },
       include: {
         role: { select: { id: true, playId: true } },
         event: { select: { id: true, playId: true } }
       }
     });
 
-    const brokenRoleLinks = assignments.filter((item) => !item.role);
-    const rolePlayMismatch = assignments.filter((item) => item.role && item.event.playId && item.role.playId !== item.event.playId);
+    const orphanAssignments = assignments.filter((item) => !item.event || !item.role);
+    const rolePlayMismatch = assignments.filter((item) => item.event.playId && item.role.playId !== item.event.playId);
+
+    const baseCast = await prisma.playRoleCast.findMany({
+      include: {
+        playRole: { select: { id: true, playId: true } },
+        play: { select: { id: true } }
+      }
+    });
+
+    const baseCastMismatch = baseCast.filter((item) => item.playRole.playId !== item.playId);
 
     const bookings = await prisma.externalBooking.findMany({ where: { endAt: { not: null } }, select: { id: true, startAt: true, endAt: true } });
     const invalidBookings = bookings.filter((item) => item.endAt && item.endAt <= item.startAt).length;
 
     const checks = [
-      { name: 'Assignment has missing role record', count: brokenRoleLinks.length },
+      { name: 'Orphan Assignment (missing event/role)', count: orphanAssignments.length },
       { name: 'Assignment role belongs to another play', count: rolePlayMismatch.length },
+      { name: 'PlayRoleCast role belongs to another play', count: baseCastMismatch.length },
       { name: 'ExternalBooking has endAt <= startAt', count: invalidBookings }
     ];
 

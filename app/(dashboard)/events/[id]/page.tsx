@@ -2,8 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { prisma } from '@/lib/prisma'
+import { setEventRoleAssignment } from '@/app/(dashboard)/events/actions'
 
-// Если у события нет endAt — считаем длительность 3 часа
 const FALLBACK_DURATION_MINUTES = 180
 
 function effectiveEndAt(startAt: Date, endAt: Date | null) {
@@ -85,37 +85,51 @@ async function getBusyReasonsForPeople(args: {
 export default async function EventPage({ params }: { params: { id: string } }) {
   const { id } = params
 
-  const event = await prisma.event.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      title: true,
-      type: true,
-      status: true,
-      startAt: true,
-      endAt: true,
-      notes: true,
-      play: { select: { id: true, title: true } },
-      venue: { select: { id: true, title: true } },
-      assignments: {
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          createdAt: true,
-          roleId: true,
-          role: { select: { id: true, title: true, sortOrder: true } },
-          person: { select: { id: true, fullName: true } },
+  const [event, people] = await Promise.all([
+    prisma.event.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        status: true,
+        startAt: true,
+        endAt: true,
+        notes: true,
+        play: {
+          select: {
+            id: true,
+            title: true,
+            roles: {
+              orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
+              select: {
+                id: true,
+                title: true,
+                assignments: {
+                  where: { eventId: id },
+                  select: { personId: true, person: { select: { id: true, fullName: true } } },
+                  take: 1,
+                },
+              },
+            },
+          },
         },
+        venue: { select: { id: true, title: true } },
       },
-    },
-  })
+    }),
+    prisma.person.findMany({ orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
+  ])
 
   if (!event) return notFound()
 
   const endAtEff = effectiveEndAt(event.startAt, event.endAt)
 
   const assignedPersonIds = Array.from(
-    new Set(event.assignments.map((a) => a.person?.id).filter(Boolean) as string[]),
+    new Set(
+      (event.play?.roles
+        .map((r) => r.assignments[0]?.personId)
+        .filter((v): v is string => Boolean(v)) ?? []),
+    ),
   )
 
   const busyReasons = await getBusyReasonsForPeople({
@@ -125,16 +139,7 @@ export default async function EventPage({ params }: { params: { id: string } }) 
     endAt: endAtEff,
   })
 
-  const anyConflictsOnAssigned = event.assignments.some((a) => busyReasons.has(a.person.id))
-
-  const assignmentsSorted = [...event.assignments].sort((a, b) => {
-    const ao = a.role?.sortOrder ?? 0
-    const bo = b.role?.sortOrder ?? 0
-    if (ao != bo) return ao - bo
-    const at = a.role?.title ?? ''
-    const bt = b.role?.title ?? ''
-    return at.localeCompare(bt, 'ru')
-  })
+  const anyConflictsOnAssigned = assignedPersonIds.some((personId) => busyReasons.has(personId))
 
   return (
     <div className="p-6 space-y-6">
@@ -198,35 +203,67 @@ export default async function EventPage({ params }: { params: { id: string } }) 
       <hr />
 
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Состав на дату</h2>
+        <h2 className="text-lg font-semibold">Состав события</h2>
 
-        {assignmentsSorted.length === 0 ? (
-          <div className="text-sm text-gray-600">Пока никого не назначили.</div>
+        {!event.play ? (
+          <div className="text-sm text-gray-600">Событие не привязано к спектаклю.</div>
+        ) : event.play.roles.length === 0 ? (
+          <div className="text-sm text-gray-600">У спектакля нет ролей.</div>
         ) : (
-          <div className="space-y-2">
-            {assignmentsSorted.map((a) => {
-              const reasons = busyReasons.get(a.person.id) ?? []
-              return (
-                <div key={a.id} className="border rounded p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold">{a.role?.title ?? 'Роль'}</div>
-                      <div className="text-sm text-gray-700">{a.person.fullName}</div>
-                    </div>
-
-                    {reasons.length ? (
-                      <div className="text-sm text-red-700 text-right">
-                        {reasons.map((r, idx) => (
-                          <div key={idx}>{r}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-green-700">Свободен</div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="rounded border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50">
+                <tr>
+                  <th className="p-3 text-left">Роль</th>
+                  <th className="p-3 text-left">Актёр</th>
+                  <th className="p-3 text-left">Замена</th>
+                </tr>
+              </thead>
+              <tbody>
+                {event.play.roles.map((role) => {
+                  const selectedPerson = role.assignments[0]?.person
+                  const reasons = selectedPerson ? busyReasons.get(selectedPerson.id) ?? [] : []
+                  return (
+                    <tr key={role.id} className="border-t align-top">
+                      <td className="p-3 font-medium">{role.title}</td>
+                      <td className="p-3">
+                        <form action={setEventRoleAssignment} className="flex items-center gap-2">
+                          <input type="hidden" name="eventId" value={event.id} />
+                          <input type="hidden" name="roleId" value={role.id} />
+                          <select
+                            name="personId"
+                            defaultValue={selectedPerson?.id ?? ''}
+                            className="w-full max-w-sm rounded border px-2 py-1"
+                          >
+                            <option value="">— не назначен —</option>
+                            {people.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.fullName}
+                              </option>
+                            ))}
+                          </select>
+                          <button className="px-3 py-1 rounded border hover:bg-neutral-50" type="submit">
+                            Сохранить
+                          </button>
+                        </form>
+                      </td>
+                      <td className="p-3">
+                        {reasons.length > 0 ? (
+                          <div className="text-red-700">
+                            <div className="font-medium">Нужна замена</div>
+                            {reasons.map((reason, idx) => (
+                              <div key={idx}>{reason}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-green-700">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

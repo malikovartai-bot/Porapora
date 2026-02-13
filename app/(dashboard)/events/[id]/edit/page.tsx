@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { EventStatus, EventType } from '@prisma/client';
+import { syncEventCastOnPlayChange } from '@/app/(dashboard)/events/actions';
 
 function toDateTimeLocalValue(date: Date | null): string {
   if (!date) return '';
@@ -91,10 +92,15 @@ export default async function EditEventPage({
     const venueId = venueIdRaw.length ? venueIdRaw : null;
     const notes = notesRaw.length ? notesRaw : null;
 
+    const current = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { playId: true },
+    });
+    if (!current) throw new Error('event not found');
+
     await prisma.event.update({
       where: { id: eventId },
       data: {
-        // ✅ синхронизация названия с выбранным спектаклем
         title: play.title,
         playId: play.id,
         type,
@@ -106,6 +112,10 @@ export default async function EditEventPage({
       },
       select: { id: true },
     });
+
+    if (current.playId !== play.id) {
+      await syncEventCastOnPlayChange(eventId, play.id);
+    }
 
     revalidatePath(`/events/${eventId}`);
     revalidatePath('/events');

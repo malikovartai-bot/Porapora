@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
+import { setPlayRoleCast } from '@/app/(dashboard)/plays/actions';
 
 export default async function EditPlayPage({
   params,
@@ -10,22 +11,26 @@ export default async function EditPlayPage({
 }) {
   const { id } = await params;
 
-  const play = await prisma.play.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      title: true,
-      description: true,
-      roles: {
-        orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
-        select: {
-          id: true,
-          title: true,
-          sortOrder: true,
+  const [play, people] = await Promise.all([
+    prisma.play.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        roles: {
+          orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
+          select: {
+            id: true,
+            title: true,
+            sortOrder: true,
+            baseCast: { select: { personId: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.person.findMany({ orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
+  ]);
 
   if (!play) return notFound();
 
@@ -107,7 +112,7 @@ export default async function EditPlayPage({
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Базовый состав (роль → человек)</h2>
+          <h2 className="text-lg font-semibold">Базовый состав</h2>
           <Link
             href={`/plays/${play.id}/roles`}
             className="px-3 py-2 rounded border text-sm hover:bg-neutral-50"
@@ -119,36 +124,53 @@ export default async function EditPlayPage({
 
         {play.roles.length === 0 ? (
           <div className="text-sm">
-            У спектакля пока нет ролей. Сначала добавь роли: <Link className="underline" href={`/plays/${play.id}/roles`}>/plays/{play.id}/roles</Link>
+            У спектакля пока нет ролей. Сначала добавь роли:{' '}
+            <Link className="underline" href={`/plays/${play.id}/roles`}>
+              /plays/{play.id}/roles
+            </Link>
           </div>
         ) : (
           <div className="rounded border overflow-hidden max-w-4xl">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50">
                 <tr>
-                  <th className="p-3 text-left">Порядок</th>
                   <th className="p-3 text-left">Роль</th>
                   <th className="p-3 text-left">Человек</th>
                   <th className="p-3 text-right">Действие</th>
                 </tr>
               </thead>
               <tbody>
-                {play.roles.map((r: { id: string; title: string; sortOrder: number }) => (
+                {play.roles.map((r) => (
                   <tr key={r.id} className="border-t">
-                    <td className="p-3 text-neutral-600">{r.sortOrder}</td>
                     <td className="p-3 font-medium">{r.title}</td>
-                    <td className="p-3 text-neutral-600">—</td>
-                    <td className="p-3 text-right text-neutral-600">недоступно в текущей схеме</td>
+                    <td className="p-3">
+                      <form action={setPlayRoleCast} className="flex items-center gap-2">
+                        <input type="hidden" name="playId" value={play.id} />
+                        <input type="hidden" name="roleId" value={r.id} />
+                        <select
+                          name="personId"
+                          defaultValue={r.baseCast?.personId ?? ''}
+                          className="w-full max-w-sm rounded border px-2 py-1"
+                        >
+                          <option value="">— не назначен —</option>
+                          {people.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.fullName}
+                            </option>
+                          ))}
+                        </select>
+                        <button className="px-3 py-1 rounded border hover:bg-neutral-50" type="submit">
+                          Сохранить
+                        </button>
+                      </form>
+                    </td>
+                    <td className="p-3 text-right text-neutral-500">Шаблон для новых событий</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-
-        <div className="text-xs text-neutral-500">
-          Это &quot;состав по умолчанию&quot; для спектакля. На конкретную дату (событие) мы позже добавим возможность переопределять.
-        </div>
       </section>
     </div>
   );
