@@ -4,9 +4,12 @@ import { importInticketsXlsxGlobal } from "./actions";
 export default async function FinanceImportPage({
   searchParams,
 }: {
-  searchParams?: { ok?: string; error?: string; lines?: string; plays?: string; events?: string; reportId?: string; eventId?: string; redirectTo?: string; existingReportId?: string };
+  searchParams?: { status?: string; ok?: string; error?: string; lines?: string; plays?: string; events?: string; reportId?: string; eventId?: string; redirectTo?: string; existingReportId?: string; fingerprint?: string; importedAt?: string; originalFileName?: string };
 }) {
-  const ok = searchParams?.ok === "1";
+  const status = (searchParams?.status ?? (searchParams?.ok === "1" ? "success" : "")).trim();
+  const isSuccess = status === "success";
+  const isDuplicate = status === "duplicate";
+  const isError = status === "error";
   const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
 
   const eventId = (searchParams?.eventId ?? "").trim();
@@ -37,7 +40,7 @@ export default async function FinanceImportPage({
         </div>
       </div>
 
-      {error ? (
+      {isError && error ? (
         <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 space-y-1">
           <div>{error}</div>
           {searchParams?.existingReportId ? (
@@ -48,7 +51,19 @@ export default async function FinanceImportPage({
         </div>
       ) : null}
 
-      {ok ? (
+      {isDuplicate ? (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-1">
+          <div><b>Отчёт уже импортирован.</b></div>
+          <div>Fingerprint: <code>{searchParams?.fingerprint ?? "—"}</code></div>
+          <div>Дата импорта: <b>{searchParams?.importedAt ? new Date(searchParams.importedAt).toLocaleString("ru-RU") : "—"}</b></div>
+          <div>Исходное имя: <b>{searchParams?.originalFileName ?? "—"}</b></div>
+          {searchParams?.existingReportId ? (
+            <div className="text-xs text-amber-800">ID отчёта: <code>{searchParams.existingReportId}</code></div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isSuccess ? (
         <div className="rounded border border-green-300 bg-green-50 p-3 text-sm text-green-800 space-y-1">
           <div><b>Импорт выполнен.</b></div>
           <div>

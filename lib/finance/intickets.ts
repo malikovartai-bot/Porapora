@@ -1,6 +1,15 @@
 import * as XLSX from "xlsx";
 
 export type InticketsReportMeta = {
+  reportId?: string;
+  documentId?: string;
+  uuid?: string;
+  accountId?: string;
+  organizerId?: string;
+  reportType?: string;
+  eventId?: string;
+  salesCount?: number;
+  createdAt?: Date;
   grossSales?: number;
   serviceFee?: number;
   netToOrganizer?: number;
