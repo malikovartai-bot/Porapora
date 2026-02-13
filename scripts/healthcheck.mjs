@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 const steps = [];
@@ -24,6 +25,82 @@ function runStep(command, args) {
   });
 
   recordStep(`${command} ${args.join(' ')}`, result.status === 0);
+}
+
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function normDate(v) {
+  if (!v) return '';
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
+function normMoney(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? (Math.round(n * 100) / 100).toFixed(2) : '';
+}
+
+function computeFingerprintForHealthcheck(parsed) {
+  const normalized = {
+    source: 'INTICKETS',
+    meta: {
+      reportNo: String(parsed.meta?.reportNo ?? '').trim().toLowerCase(),
+      contractNo: String(parsed.meta?.contractNo ?? '').trim().toLowerCase(),
+      reportDate: normDate(parsed.meta?.reportDate),
+      periodStart: normDate(parsed.meta?.periodStart),
+      periodEnd: normDate(parsed.meta?.periodEnd),
+      grossSales: normMoney(parsed.meta?.grossSales),
+      serviceFee: normMoney(parsed.meta?.serviceFee),
+      netToOrganizer: normMoney(parsed.meta?.netToOrganizer)
+    },
+    lines: (parsed.lines ?? []).map((line) => ({
+      playTitle: String(line.playTitle ?? '').trim().toLowerCase(),
+      sessionAt: normDate(line.sessionAt),
+      ticketsCount: Number(line.ticketsCount ?? 0),
+      grossAmount: normMoney(line.grossAmount)
+    })).sort((a, b) => `${a.playTitle}_${a.sessionAt}`.localeCompare(`${b.playTitle}_${b.sessionAt}`))
+  };
+
+  return sha256(JSON.stringify(normalized));
+}
+
+function runFinanceFingerprintChecks() {
+  const base = {
+    meta: { reportNo: 'R-101', grossSales: 5000, serviceFee: 500, netToOrganizer: 4500 },
+    lines: [
+      { playTitle: 'Спектакль 1', sessionAt: new Date('2025-04-01T16:00:00Z'), ticketsCount: 100, grossAmount: 5000 }
+    ]
+  };
+
+  const sameContentDifferentFilename = JSON.parse(JSON.stringify(base));
+  const differentContent = {
+    meta: { reportNo: 'R-102', grossSales: 6500, serviceFee: 700, netToOrganizer: 5800 },
+    lines: [
+      { playTitle: 'Спектакль 1', sessionAt: '2025-04-01T16:00:00Z', ticketsCount: 120, grossAmount: 6500 }
+    ]
+  };
+
+  const fp1 = computeFingerprintForHealthcheck(base);
+  const fp2 = computeFingerprintForHealthcheck(sameContentDifferentFilename);
+  const fp3 = computeFingerprintForHealthcheck(differentContent);
+
+  recordStep('Finance import dedupe: same content with different filenames -> duplicate', fp1 === fp2);
+  recordStep('Finance import dedupe: different content -> unique fingerprints', fp1 !== fp3);
+
+  const imported = new Set();
+  let totalGross = 0;
+  for (const report of [base, sameContentDifferentFilename, differentContent]) {
+    const fp = computeFingerprintForHealthcheck(report);
+    if (imported.has(fp)) continue;
+    imported.add(fp);
+    totalGross += Number(report.meta.grossSales ?? 0);
+  }
+
+  recordStep('Finance import dedupe: repeated import does not double sums', totalGross === 11500);
 }
 
 async function runDbChecks() {
@@ -78,6 +155,7 @@ async function main() {
   console.log('Running healthcheck...');
   runStep('npx', ['prisma', 'validate']);
   runStep('npx', ['tsc', '--noEmit']);
+  runFinanceFingerprintChecks();
   await runDbChecks();
 
   console.log('\nHealthcheck summary:');
