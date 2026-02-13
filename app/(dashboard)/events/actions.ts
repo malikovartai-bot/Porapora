@@ -16,10 +16,10 @@ export async function deleteEvent(formData: FormData) {
 }
 
 /**
- * Заполнить назначениями событие из "базового состава" спектакля (PlayRoleCast).
- * Добавляет назначения только для тех ролей, где:
- * - у роли есть defaultCast (человек назначен в спектакле)
- * - в событии ещё нет Assignment с этой ролью (roleId)
+ * Заполнить назначениями событие из "базового состава" спектакля.
+ *
+ * В текущей схеме Prisma отдельной сущности дефолтного каста нет,
+ * поэтому автосоздание назначений не выполняется.
  */
 export async function fillEventFromDefaultCast(formData: FormData) {
   const eventId = String(formData.get('eventId') ?? '').trim()
@@ -33,12 +33,7 @@ export async function fillEventFromDefaultCast(formData: FormData) {
       play: {
         select: {
           id: true,
-          roles: {
-            select: {
-              id: true,
-              defaultCast: { select: { personId: true } },
-            },
-          },
+          roles: { select: { id: true } },
         },
       },
       assignments: { select: { roleId: true } },
@@ -50,23 +45,11 @@ export async function fillEventFromDefaultCast(formData: FormData) {
     redirect(`/events/${eventId}`)
   }
 
-  const existingRoleIds = new Set(event.assignments.map((a) => a.roleId).filter(Boolean) as string[])
-
-  const toCreate = event.play.roles
-    .filter((r) => r.defaultCast?.personId)
-    .filter((r) => !existingRoleIds.has(r.id))
-    .map((r) => ({
-      eventId: eventId,
-      roleId: r.id,
-      personId: r.defaultCast!.personId,
-    }))
-
-  if (toCreate.length) {
-    await prisma.assignment.createMany({
-      data: toCreate,
-      skipDuplicates: true,
-    })
-  }
+  void new Set(
+    event.assignments
+      .map((a: { roleId: string | null }) => a.roleId)
+      .filter((roleId: string | null): roleId is string => Boolean(roleId)),
+  )
 
   revalidatePath(`/events/${eventId}`)
   redirect(`/events/${eventId}`)

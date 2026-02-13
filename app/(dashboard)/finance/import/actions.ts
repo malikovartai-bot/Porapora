@@ -8,6 +8,10 @@ import crypto from "crypto";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 
+type MetaWithRefunds = ReturnType<typeof parseInticketsXlsx>['meta'] & {
+  refundsAmount?: unknown;
+};
+
 function safeFilename(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_");
 }
@@ -52,7 +56,7 @@ function computeSemanticHash(parsed: ReturnType<typeof parseInticketsXlsx>): str
     grossSales: moneyToString(parsed.meta.grossSales),
     serviceFee: moneyToString(parsed.meta.serviceFee),
     netToOrganizer: moneyToString(parsed.meta.netToOrganizer),
-    refundsAmount: moneyToString(parsed.meta.refundsAmount),
+    refundsAmount: moneyToString((parsed.meta as MetaWithRefunds).refundsAmount),
   };
 
   const lines = parsed.lines
@@ -131,7 +135,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
         grossSales: parsed.meta.grossSales ?? null,
         serviceFee: parsed.meta.serviceFee ?? null,
         netToOrganizer: parsed.meta.netToOrganizer ?? null,
-        refundsAmount: parsed.meta.refundsAmount ?? null,
+        refundsAmount: (parsed.meta as MetaWithRefunds).refundsAmount as Prisma.Decimal | null | undefined ?? null,
         reportNo: parsed.meta.reportNo ?? null,
         contractNo: parsed.meta.contractNo ?? null,
         reportDate: parsed.meta.reportDate ?? null,

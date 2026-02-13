@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
-import { setPlayRoleCast } from '@/app/(dashboard)/plays/actions';
 
 export default async function EditPlayPage({
   params,
@@ -23,23 +22,12 @@ export default async function EditPlayPage({
           id: true,
           title: true,
           sortOrder: true,
-          defaultCast: {
-            select: {
-              id: true,
-              person: { select: { id: true, fullName: true } },
-            },
-          },
         },
       },
     },
   });
 
   if (!play) return notFound();
-
-  const people = await prisma.person.findMany({
-    orderBy: { fullName: 'asc' },
-    select: { id: true, fullName: true },
-  });
 
   async function updatePlay(formData: FormData) {
     'use server';
@@ -145,40 +133,14 @@ export default async function EditPlayPage({
                 </tr>
               </thead>
               <tbody>
-                {play.roles.map((r) => {
-                  const currentPersonId = r.defaultCast?.person?.id ?? '';
-                  return (
-                    <tr key={r.id} className="border-t">
-                      <td className="p-3 text-neutral-600">{r.sortOrder}</td>
-                      <td className="p-3 font-medium">{r.title}</td>
-                      <td className="p-3">
-                        <form action={setPlayRoleCast} className="flex gap-2 items-center">
-                          <input type="hidden" name="playId" value={play.id} />
-                          <input type="hidden" name="playRoleId" value={r.id} />
-                          <select
-                            name="personId"
-                            defaultValue={currentPersonId}
-                            className="min-w-[280px] rounded border px-3 py-2 text-sm"
-                          >
-                            <option value="">— не назначено —</option>
-                            {people.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.fullName}
-                              </option>
-                            ))}
-                          </select>
-
-                          <button className="px-3 py-2 rounded border text-sm hover:bg-neutral-50" type="submit">
-                            Сохранить
-                          </button>
-                        </form>
-                      </td>
-                      <td className="p-3 text-right text-neutral-600">
-                        {r.defaultCast?.person ? 'назначено' : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {play.roles.map((r: { id: string; title: string; sortOrder: number }) => (
+                  <tr key={r.id} className="border-t">
+                    <td className="p-3 text-neutral-600">{r.sortOrder}</td>
+                    <td className="p-3 font-medium">{r.title}</td>
+                    <td className="p-3 text-neutral-600">—</td>
+                    <td className="p-3 text-right text-neutral-600">недоступно в текущей схеме</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
