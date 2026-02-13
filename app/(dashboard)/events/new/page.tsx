@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { EventStatus, EventType } from '@prisma/client';
+import { syncEventCastOnPlayChange } from '@/app/(dashboard)/events/actions';
 
 /**
  * ЛОГИКА:
@@ -59,7 +60,6 @@ export default async function NewEventPage() {
 
     const created = await prisma.event.create({
       data: {
-        // ✅ событие = спектакль
         title: play.title,
         playId: play.id,
         type,
@@ -72,7 +72,10 @@ export default async function NewEventPage() {
       select: { id: true },
     });
 
+    await syncEventCastOnPlayChange(created.id, play.id);
+
     revalidatePath('/events');
+    revalidatePath(`/events/${created.id}`);
     redirect(`/events/${created.id}`);
   }
 

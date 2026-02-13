@@ -20,7 +20,7 @@ export const eventSchema = z.object({
 
 export const assignmentSchema = z.object({
   personId: z.string().cuid(),
-  roleId: z.string().cuid().optional(),
+  roleId: z.string().cuid(),
   jobTitle: z.string().optional(),
   notes: z.string().optional(),
   callTime: z.string().datetime().optional()
