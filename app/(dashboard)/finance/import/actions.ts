@@ -41,6 +41,44 @@ function isFingerprintUniqueConflict(error: unknown) {
   return target.includes("fingerprint") || target.includes("contentHash");
 }
 
+function isUnknownFingerprintError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("Unknown argument `fingerprint`") ||
+    error.message.includes("Unknown field `fingerprint`") ||
+    error.message.includes('column "fingerprint" does not exist')
+  );
+}
+
+async function detectFingerprintSupport() {
+  try {
+    await prisma.financeReport.findFirst({
+      take: 1,
+      select: { id: true, fingerprint: true } as never,
+    } as never);
+    return true;
+  } catch (error) {
+    if (isUnknownFingerprintError(error)) return false;
+    throw error;
+  }
+}
+
+async function findExistingByHash(hash: string, hasFingerprint: boolean) {
+  if (hasFingerprint) {
+    return prisma.financeReport.findFirst({
+      where: {
+        OR: [{ fingerprint: hash } as never, { contentHash: hash }],
+      } as never,
+      select: { id: true, fingerprint: true, importedAt: true, originalFileName: true } as never,
+    } as never);
+  }
+
+  return prisma.financeReport.findFirst({
+    where: { contentHash: hash },
+    select: { id: true, importedAt: true, originalFileName: true },
+  });
+}
+
 /**
  * Импорт отчёта Intickets:
  * - вычисляет fingerprint из содержимого отчёта
@@ -67,17 +105,15 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
   }
 
   const fingerprint = computeReportFingerprint(parsed);
+  const hasFingerprint = await detectFingerprintSupport();
 
-  const existing = await prisma.financeReport.findUnique({
-    where: { fingerprint },
-    select: { id: true, fingerprint: true, importedAt: true, originalFileName: true },
-  });
+  const existing = await findExistingByHash(fingerprint, hasFingerprint);
 
   if (existing) {
     redirect(
       buildRedirectUrl(redirectTo, {
         status: "duplicate",
-        fingerprint: existing.fingerprint,
+        fingerprint,
         existingReportId: existing.id,
         importedAt: existing.importedAt.toISOString(),
         originalFileName: existing.originalFileName ?? "",
@@ -99,29 +135,34 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
 
   try {
     await prisma.$transaction(async (tx) => {
+      const createData: Record<string, unknown> = {
+        provider: "INTICKETS",
+        source: "INTICKETS",
+        originalFileName: file.name,
+        fileOriginalName: file.name,
+        fileStoragePath: storagePath,
+        mimeType: file.type || null,
+        size: file.size || null,
+
+        contentHash: fingerprint,
+
+        grossSales: parsed.meta.grossSales ?? null,
+        serviceFee: parsed.meta.serviceFee ?? null,
+        netToOrganizer: parsed.meta.netToOrganizer ?? null,
+        refundsAmount: ((parsed.meta as MetaWithRefunds).refundsAmount as Prisma.Decimal | null | undefined) ?? null,
+        reportNo: parsed.meta.reportNo ?? null,
+        contractNo: parsed.meta.contractNo ?? null,
+        reportDate: parsed.meta.reportDate ?? null,
+        periodStart: parsed.meta.periodStart ?? null,
+        periodEnd: parsed.meta.periodEnd ?? null,
+      };
+
+      if (hasFingerprint) {
+        createData.fingerprint = fingerprint;
+      }
+
       const report = await tx.financeReport.create({
-        data: {
-          provider: "INTICKETS",
-          source: "INTICKETS",
-          fingerprint,
-          originalFileName: file.name,
-          fileOriginalName: file.name,
-          fileStoragePath: storagePath,
-          mimeType: file.type || null,
-          size: file.size || null,
-
-          contentHash: fingerprint,
-
-          grossSales: parsed.meta.grossSales ?? null,
-          serviceFee: parsed.meta.serviceFee ?? null,
-          netToOrganizer: parsed.meta.netToOrganizer ?? null,
-          refundsAmount: ((parsed.meta as MetaWithRefunds).refundsAmount as Prisma.Decimal | null | undefined) ?? null,
-          reportNo: parsed.meta.reportNo ?? null,
-          contractNo: parsed.meta.contractNo ?? null,
-          reportDate: parsed.meta.reportDate ?? null,
-          periodStart: parsed.meta.periodStart ?? null,
-          periodEnd: parsed.meta.periodEnd ?? null,
-        },
+        data: createData as never,
         select: { id: true },
       });
 
@@ -171,10 +212,7 @@ export async function importInticketsXlsxGlobal(formData: FormData) {
     });
   } catch (e: unknown) {
     if (isFingerprintUniqueConflict(e)) {
-      const conflict = await prisma.financeReport.findUnique({
-        where: { fingerprint },
-        select: { id: true, fingerprint: true, importedAt: true, originalFileName: true },
-      });
+      const conflict = await findExistingByHash(fingerprint, hasFingerprint);
       redirect(
         buildRedirectUrl(redirectTo, {
           status: "duplicate",
